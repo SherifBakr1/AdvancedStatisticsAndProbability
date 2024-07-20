@@ -1,0 +1,213 @@
+---
+title: "CART Regression Trees - Code Demo"
+author: "Sherif and Nesalin"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load necesssary packages
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(Metrics)
+library(dplyr)
+library(gridExtra)
+library(grid)
+library(reshape2)
+```
+
+Classification & Regression Trees (CART) - Regression Trees: Tree-based models consist of one or more nested if-then statements for the predictors that partition the data. Within these partitions, a specific model is used to predict the outcome. For this code demonstration, we will be focusing on Regression Trees in CART. This recursive partitioning technique provides for exploration of the structure of a dataset (response and predictors) and identification of easy to visualize decision rules for predicting a continuous outcome.
+
+Data Background: This dataset is sourced from the California Cooperative Oceanic Fisheries Investigations (CalCOFI), which offers comprehensive oceanographic and marine life data. It includes measurements of various environmental factors such as temperature, salinity, and oxygen levels, providng valuable insights into the dynamics of the California Current ecosystem.
+
+Research Question: How do different oceanographic conditions influence temperature variations in the California Current ecosystem?
+By using CART regression trees, we aim to identify key predictors influencing temperature variations and develop a predictive model to better understand the interactions within the California marine environment.
+
+Regression Analysis Using a Regression Tree
+
+1) Read data: This code reads the dataset from the "bottle2.csv", and then specifies the target_variable (response variable) and separates the features (predictor variables) from the target variable. Viewing the structure and summary of the data helps in understanding the data types and key statistics, which are crucial for making informed pre-processing decisions. A key observation here is there are several columns with a significant number of 'NA' values, indicating missing values - this will be addressed in the next step. It should also be noted that temperature, salinity, and oxygen levels vary widely, indicating a diverse range of sampling conditions. 
+
+```{r}
+
+# Read the data
+data <- read.csv("bottle2.csv")  
+
+# Setting temperature in degree Celsius as the target variable for analysis
+target_variable <- "T_degC"  
+features <- data %>% select(-all_of(target_variable))
+
+# Display the structure of the data
+str(data)
+
+# Summary statistics of the data
+summary(data)
+```
+
+2) Pre-Process Data: This code processes the data by selecting only numeric columns for the predictor variables to simplify the analysis. We handle missing values by imputing with the median, which is a common practice to avoid biases due to missing data. 
+
+```{r}
+
+# Drop non-numeric columns for simplicity
+# Since regression models require numeric input, we focus on numeric featues
+features <- features %>% select_if(is.numeric)
+
+# Handle missing values by imputing with the median value
+preProcess_missingdata_model <- preProcess(features, method='medianImpute')
+features <- predict(preProcess_missingdata_model, features)
+target <- data[[target_variable]]
+target[is.na(target)] <- median(target, na.rm = TRUE)
+
+# Combine features and target into one dataframe for ease of analysis
+data_clean <- cbind(features, T_degC = target)
+
+```
+
+3) Data Visualization: This code creates a histogram to visualize the distribution of the response variable (t_degC) which provides insights into it's range and central tendency. Looking at the histogram, the majority of the temperature values are on the lower end, peaking around 3-4 degrees Celsius. This suggests that the dataset has more observations with colder temperatures, which is in line with oceanographic data. Then, a heatmap is generated to show correlations between a subset of predictors and the response variable with correlation values between -1 (strong negative correlation) to 1 (strong positive correlation). This helps identify potentially important predictors for the temperature. Looking at the heatmap, it shows a significant correlation suggesting a strong relationship between temperature (T_degC) and oxygen concentration (02ml_L), as well as depth (depthm) and salinity (salnty), which could indicate how salinity varies with depth. The correlation between temperature (T_degC) and depth (depthm) is also significant with a negative correlation, as temperature decreases with depth and there is also a strong negative correlation between salinity (salnty) and temperature (T_degC). To explore these relationships further, scatterplots were created to explore the relationship between temperature and depth, salinity, and oxygen respectively. The relationship between temperature and oxygen follows the line showing a strong positive correlation. These plots help us better understand the relationships between temperature and the other variables, as this is crucial for building a robust regression model. 
+
+```{r}
+
+# Histogram of the target variable
+hist_plot <- ggplot(data_clean, aes(x = T_degC)) +
+  geom_histogram(binwidth = 1, fill = "lightblue", color = "black") +
+  labs(title = "Histogram of T_degC", x = "Temperature (°C)", y = "Frequency") 
+
+print(hist_plot)
+
+# Correlation heatmap of the numeric features
+selected_features <- data_clean %>% select(T_degC, Salnty, Depthm, O2ml_L)
+corr_matrix <- cor(selected_features, use = "complete.obs")
+
+heatmap_plot <- ggplot(melt(corr_matrix), aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "lightblue", high = "blue", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       name = "Correlation") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    plot.margin = unit(c(1, 1, 2, 2), "cm")
+  ) +
+  coord_fixed()
+
+print(heatmap_plot)
+
+# Scatter plot: Temperature vs Depth
+scatter_plot_depth <- ggplot(data_clean, aes(x = Depthm, y = T_degC)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Scatter Plot of Temperature vs Depth", x = "Depth (m)", y = "Temperature (°C)")
+
+print(scatter_plot_depth)
+
+# Scatter plot: Temperature vs Salinity
+scatter_plot_salinity <- ggplot(data_clean, aes(x = Salnty, y = T_degC)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Scatter Plot of Temperature vs Salinity", x = "Salinity (psu)", y = "Temperature (°C)")
+
+print(scatter_plot_salinity)
+
+# Scatter plot: Temperature vs Oxygen
+scatter_plot_oxygen <- ggplot(data_clean, aes(x = O2ml_L, y = T_degC)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Scatter Plot of Temperature vs Oxygen", x = "Oxygen (ml/L)", y = "Temperature (°C)")
+
+print(scatter_plot_oxygen)
+
+
+```
+
+4) Split Data into Training and Testing Sets: This splits the data into training and testing sets, where 80% of the data is used for training and 20% is used for testing. By setting the seed to 42, this ensures reproducibility. The data is split to evaluate model performance on unseen data, which helps in assessing the model's generalization ability.
+
+```{r}
+
+# Split the data into training and testing sets
+set.seed(42)
+trainIndex <- createDataPartition(data_clean$T_degC, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+data_train <- data_clean[ trainIndex,]
+data_test  <- data_clean[-trainIndex,]
+
+```
+
+5) Train Regression Tree Model: This trains a regression tree model using the training data which is easy to interpret and makes predictions on the test data to evaluate model performance. The 'rpart' function trains the regression model using the training data (data_train), where it recursively partitions the predictor variables into regions, with a goal of minimizing the variance of the response variable within each region. After training the model, you use it to make predictions on the test data (data_test) using the 'predict' function. The model predicts the temperature based on the predictors in the test data. 
+
+```{r}
+
+# Train a regression tree model
+regressor <- rpart(T_degC ~ ., data = data_train, method = "anova")
+
+# Make predictions
+predictions <- predict(regressor, data_test)
+
+
+```
+
+6) Model Evaluation: This calculates evaluation metrics with Mean Squared Error (MSE) and R-squared (R2). MSE measures the average squared difference between observed and predicted values, as it quantifies the overall quality of predictions, the lower values indicate better model performance. The MSE value of 0.437 indicates that on average, the squared difference is relatively small, suggesting the model's predictions are generally close to the true values. While R-squared indicates the proportion of variance in the response variable (T_degC) that is explained by the predictor variables, where it ranges from 0 to 1, where higher values indicate a better fit of the model to the data. The R-squared value is 0.979 indicates that 97.9% of the variance in temperature is explained by the predictor variables included in the model. This suggests that the regression tree model is highly effective at capturing the underlying patterns in the data to make accurate predictions. 
+
+```{r}
+
+# Evaluate the model
+mse <- mse(data_test$T_degC, predictions)
+r2 <- R2(predictions, data_test$T_degC)
+
+# Evaluation metrics
+print(paste("Mean Squared Error:", mse))
+print(paste("R-squared:", r2))
+
+```
+
+7) Plot the Regression Tree: This generates a visual representation of the regression tree, plotting the regression tree provides insights into the decision rules and splits used by the model to make predictions. The top node/root node is the starting point of the tree, where it's looking at the temperature to decide whether it's less than 10 or not. Then it goes into splitting nodes, where each node below the root represents a decision point, the model evaluates a predictor and makes a decision based on that specific threshold. The tree will then branch out into "yes" or "no" paths based on whether the condition is met or not. It ends with terminal nodes at the bottom of the tree, where they don't split any further. These leaf nodes represent the predicted values for the response variable (temperature) for observations that fall into that node. The percentages in the regression tree provide insight into how the dataset is partitioned at each decision point, which helps us understand the distribution of data across different branches of the tree. 
+
+```{r}
+
+# Plot the regression tree
+rpart.plot(regressor)
+
+```
+
+Overall, the regression tree model performs well based on the low MSE and high R-squared values. This suggests that the model captures the underlying relationships in the data effectively to make accurate predictions of ocean water temperatures. 
+
+CART Regression Tree Resources:
+
+1) The Elements of Statistical Learning by Trevor Hastie, which provides an introduction to machine
+learning, including regression trees
+
+2) Introduction to Statistical Learning by Gareth Games, which is just like the previously mentioned book,
+but with more examples of regression trees implementations
+
+3) Machine Learning Yearning by Andrew NG, which provides a guide to how to structure machine
+learning projects with regression trees examples
+
+4) Pattern Recognition and Machine Learning by Christopher Bishop, which covers a wide range of
+machine learning algorithms, with clear explanation
+
+5) Data Science from Scratch: First Principles with Python by Joel Grus, which provides a hands-on
+introduction to machine learning, including regression trees
+
+6) An Introduction to R by W.N. Venables by D.M. Smith, which provides a comprehensive guide to R,
+including data manipulation and statistical methods
+
+7) R for Data Science by Hadley Wickham, which covers data manipulation and modeling in R
+
+8) Modern Applied Statistics with S by W.N. Venables, which provides statistical methods in R, including
+regression trees
+
+9) Applied Predictive Modeling by Max Kuhn, which focuses on the practical aspects of predictive
+modeling in R
+
+10) Hands-On Machine Learning with R by Brad Boehmke, which provides a guide to implementing
+machine learning algorithms, including regression trees, in R
+
+
+
+

@@ -1,0 +1,82 @@
+---
+title: "Count models - worked example"
+author: "W Christensen"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(MASS)
+
+```
+
+### Data dictionary/code book
+
+The data for this example come from the 2016 administration of the General Social Survey, an on-going panel study conducted by NORC that monitors American social attitudes, behaviors, and attributes. The specific data set was obtained from Categorical Data Analysis and Multilevel Modeling Using R (Liu, 2022), linked here: https://edge.sagepub.com/liu1e/student-resources/poisson-regression-models 
+
+educ: Years of education completed
+
+wrkfull: Work full time, 0 = no, 1 = yes
+
+female: male = 0, female = 1
+
+maritals: unmarried = 0 , married = 1
+
+vistzoo: Number of times visited zoo in the past year
+
+### Read in the data 
+
+First, read in the data and check that all variables have correct variable types. 
+
+```{r}
+
+zoo <- read.csv("count.csv", header=TRUE)
+
+str(zoo)
+
+```
+The wrkfull, female, and martials variables are all 2-category variables that have already been dummy-coded as zero and one. Because of this, we can continue with them as integer variable types.
+
+### Fit the Poisson model
+
+```{r}
+
+zoo.poisson <- glm(vistzoo ~ educ + wrkfull + female + maritals, family="poisson", data=zoo)
+summary(zoo.poisson)
+
+```
+
+There are three significant predictor coefficients (educ, wrkfull, and maritals) and one non-significant predictor coefficient (female). Similar to  logistic regression, positive coefficient estimates mean that the predicted log count of the outcome is higher as the predictor increases, and negative coefficient estimates mean that the predicted log count of the outcome is lower as the predictor increases. Using our "gist" based interpretations:
+
+educ: Holding all other predictors constant, predicted zoo visits increase as years of education increases (p < 0.001).
+
+workfll: Holding all other predictors constant, predicted zoo visits are higher for those who work fulltime compared to those who do not (p < 0.001).
+
+workfll: Holding all other predictors constant, predicted zoo visits are higher for those who are married compared to those who are not (p = 0.004).
+
+
+### Fit the quasipoisson model
+
+```{r}
+
+zoo.quasipoisson <- glm(vistzoo ~ educ + wrkfull + female + maritals, family="quasipoisson", data=zoo)
+summary(zoo.quasipoisson)
+
+```
+
+The residual deviance does not change between the Poisson and the quasipoisson models and neither do the coefficient estimates. However, there are some signs of potential overdispersion. First, the standard errors in the quasipoisson models are larger than those in the Poisson model, which increases the p-values (although not enough to change the decisions about them). Second, the dispersion parameter is taken to be 1.677, which is noticeably higher than 1 - this suggests that overdispersion is present and using the Poisson model is likely to be inappropriate due to its restrictive assumptions. 
+
+### Fit the negative binomial model
+
+The negative binomial model cannot be fitted using the glm() function, so we will use the glm.nb() function to do so. Be sure to have loaded the MASS library before using the function. 
+
+```{r}
+
+zoo.nb <- glm.nb(vistzoo ~ educ + wrkfull + female + maritals, data=zoo)
+summary(zoo.nb)
+
+```
+
+The coefficient estimates and standard errors in the negative binomial model are slightly different than the quasipoisson model, but none of the decisions about the null hypothesis tests for the coefficients changes. Similar to the quasipoisson model, the dispersion parameter is noticeably greater than one, suggesting overdispersion is present that the Poisson model cannot capture. We also see that the residual deviance decreased to be much closer to its degrees of freedom than in the Poisson or quasipoisson models. In this situation, the negative binomial model, which is the least restrictive of the three, is likely the best choice. 
+
